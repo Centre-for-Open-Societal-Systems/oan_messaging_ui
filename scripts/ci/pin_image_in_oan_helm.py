@@ -26,6 +26,7 @@ import json
 import os
 import re
 import sys
+import time
 import urllib.error
 import urllib.request
 
@@ -80,51 +81,55 @@ def get_value(text: str, path: tuple[str, ...]) -> str:
     return re.sub(r"^\s*[^:]+:\s*", "", lines[_find(lines, path)]).split(" #")[0].strip()
 
 
-def api(method: str, url: str, token: str, body: dict | None = None, ok404: bool = False):
-    req = urllib.request.Request(
-        url,
-        method=method,
-        data=json.dumps(body).encode() if body is not None else None,
-        headers={
-            "Authorization": f"Bearer {token}",
-            "Accept": "application/vnd.github+json",
-            "Content-Type": "application/json",
-            "User-Agent": "oan-image-pinner",
-        },
-    )
-    try:
-        with urllib.request.urlopen(req, timeout=30) as r:
-            raw = r.read()
-    except urllib.error.HTTPError as e:
-        if ok404 and e.code in (404, 422):
-            return None
-        detail = e.read().decode(errors="replace")[:300].replace(token, "***")
-        sys.exit(f"{method} {url.split('?')[0]} failed: HTTP {e.code} {detail}")
-    return json.loads(raw) if raw else None
+def _send(method: str, url: str, token: str, body: dict | None = None) -> tuple[int, object]:
+    """One GitHub API call: (status, JSON body on success, message on failure).
+
+    GitHub 5xx answers and network errors are retried (4 attempts, growing pause), so a transient 502 does not
+    fail a build whose image is already pushed. The token is never shown.
+    """
+    for attempt in range(1, 5):
+        req = urllib.request.Request(
+            url,
+            method=method,
+            data=json.dumps(body).encode() if body is not None else None,
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Accept": "application/vnd.github+json",
+                "Content-Type": "application/json",
+                "User-Agent": "oan-image-pinner",
+            },
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=30) as r:
+                raw = r.read()
+                return r.status, (json.loads(raw) if raw else None)
+        except urllib.error.HTTPError as e:
+            try:
+                message = json.loads(e.read()).get("message", "")
+            except ValueError:
+                message = ""
+            if e.code < 500 or attempt == 4:
+                return e.code, message.replace(token, "***")[:200]
+            print(f"{method} {url.split('?')[0]}: HTTP {e.code}; retrying ({attempt}/3)")
+        except (urllib.error.URLError, TimeoutError) as e:
+            if attempt == 4:
+                return 599, type(e).__name__
+            print(f"{method} {url.split('?')[0]}: {type(e).__name__}; retrying ({attempt}/3)")
+        time.sleep(2 * attempt)
+    return 599, "no attempt made"
+
+
+def api(method: str, url: str, token: str, body: dict | None = None):
+    status, data = _send(method, url, token, body)
+    if status >= 400:
+        sys.exit(f"{method} {url.split('?')[0]} failed: HTTP {status} {data}")
+    return data
 
 
 def try_api(method: str, url: str, token: str, body: dict | None = None) -> tuple[int, str]:
     """Status and message of a call that may fail; never raises, never shows the token."""
-    req = urllib.request.Request(
-        url,
-        method=method,
-        data=json.dumps(body).encode() if body is not None else None,
-        headers={
-            "Authorization": f"Bearer {token}",
-            "Accept": "application/vnd.github+json",
-            "Content-Type": "application/json",
-            "User-Agent": "oan-image-pinner",
-        },
-    )
-    try:
-        with urllib.request.urlopen(req, timeout=30) as r:
-            return r.status, ""
-    except urllib.error.HTTPError as e:
-        try:
-            message = json.loads(e.read()).get("message", "")
-        except ValueError:
-            message = ""
-        return e.code, message.replace(token, "***")[:200]
+    status, data = _send(method, url, token, body)
+    return status, data if isinstance(data, str) else ""
 
 
 def main(argv: list[str]) -> int:

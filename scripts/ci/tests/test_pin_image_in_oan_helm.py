@@ -1,7 +1,10 @@
 """The values-file edit of pin_image_in_oan_helm.py: one line changes, nothing else."""
 
+import json
 import sys
+import threading
 import unittest
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -58,6 +61,39 @@ class PinImage(unittest.TestCase):
             "1.0.0-develop.1@sha256:abc",
         ):
             self.assertFalse(pin.TAG.fullmatch(bad))
+
+
+class Retry(unittest.TestCase):
+    def serve(self, statuses):
+        calls = []
+
+        class H(BaseHTTPRequestHandler):
+            def do_GET(self):
+                calls.append(1)
+                code = statuses[min(len(calls), len(statuses)) - 1]
+                self.send_response(code)
+                self.end_headers()
+                self.wfile.write(json.dumps({"message": "boom"} if code >= 400 else {"ok": True}).encode())
+
+            def log_message(self, *a):
+                pass
+
+        srv = HTTPServer(("127.0.0.1", 0), H)
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        self.addCleanup(srv.shutdown)
+        return f"http://127.0.0.1:{srv.server_port}/x", calls
+
+    def test_a_transient_502_is_retried_and_a_404_is_not(self):
+        pin.time.sleep = lambda s: None
+        url, calls = self.serve([502, 502, 200])
+        self.assertEqual(pin._send("GET", url, "t"), (200, {"ok": True}))
+        self.assertEqual(len(calls), 3)
+        url, calls = self.serve([404])
+        self.assertEqual(pin._send("GET", url, "t"), (404, "boom"))
+        self.assertEqual(len(calls), 1)
+        url, calls = self.serve([502])
+        self.assertEqual(pin._send("GET", url, "t")[0], 502)
+        self.assertEqual(len(calls), 4)
 
 
 if __name__ == "__main__":
