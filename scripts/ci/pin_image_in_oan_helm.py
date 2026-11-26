@@ -104,6 +104,30 @@ def api(method: str, url: str, token: str, body: dict | None = None, ok404: bool
     return json.loads(raw) if raw else None
 
 
+def try_api(method: str, url: str, token: str, body: dict | None = None) -> tuple[int, str]:
+    """Status and message of a call that may fail; never raises, never shows the token."""
+    req = urllib.request.Request(
+        url,
+        method=method,
+        data=json.dumps(body).encode() if body is not None else None,
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Accept": "application/vnd.github+json",
+            "Content-Type": "application/json",
+            "User-Agent": "oan-image-pinner",
+        },
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=30) as r:
+            return r.status, ""
+    except urllib.error.HTTPError as e:
+        try:
+            message = json.loads(e.read()).get("message", "")
+        except ValueError:
+            message = ""
+        return e.code, message.replace(token, "***")[:200]
+
+
 def main(argv: list[str]) -> int:
     if len(argv) != 3 or argv[0] not in PATHS:
         sys.exit("usage: pin_image_in_oan_helm.py <service|ui> <tag> <sha256:digest>")
@@ -127,8 +151,19 @@ def main(argv: list[str]) -> int:
 
     # The branch in the fork starts at the upstream commit; an old branch of the same name is moved onto it.
     ref = f"{gh}/{fork}/git/refs"
-    if api("POST", ref, token, {"ref": f"refs/heads/{branch}", "sha": base}, ok404=True) is None:
-        api("PATCH", f"{ref}/heads/{branch}", token, {"sha": base, "force": True})
+    made = try_api("POST", ref, token, {"ref": f"refs/heads/{branch}", "sha": base})
+    if made[0] == 422 and "already exists" in made[1]:
+        made = try_api("PATCH", f"{ref}/heads/{branch}", token, {"sha": base, "force": True})
+    if made[0] >= 400:
+        # Usually the fork has not got the upstream commit yet: bring its default branch up to date, then retry.
+        print(f"creating {branch} in {fork} failed (HTTP {made[0]} {made[1]}); syncing the fork with upstream")
+        synced = try_api("POST", f"{gh}/{fork}/merge-upstream", token, {"branch": "main"})
+        print(f"merge-upstream: HTTP {synced[0]} {synced[1]}")
+        made = try_api("POST", ref, token, {"ref": f"refs/heads/{branch}", "sha": base})
+        if made[0] == 422 and "already exists" in made[1]:
+            made = try_api("PATCH", f"{ref}/heads/{branch}", token, {"sha": base, "force": True})
+        if made[0] >= 400:
+            sys.exit(f"cannot create {branch} in {fork}: HTTP {made[0]} {made[1]}")
     api(
         "PUT",
         f"{gh}/{fork}/contents/{VALUES}",
