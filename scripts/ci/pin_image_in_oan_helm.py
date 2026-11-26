@@ -5,12 +5,12 @@
 
 Run by the Jenkins job after it pushed the image of a develop build. It changes the one `tag:` line
 of that image in environments/dev/values/oan-messaging.yaml of Centre-for-Open-Societal-Systems/oan-helm
-to `<tag>@<digest>` (images are pinned by digest there) and opens a pull request into oan-helm `main` from
+to `<tag>@<digest>` (images are pinned by digest there) and opens a pull request into oan-helm from
 a branch on the pipeline account's fork. Nothing is ever pushed to the upstream repository itself. When that
 pull request is merged, the oan-helm-dev-commons job delivers the release to New Dev.
 
 An older open pin pull request for the same image (branch bot/oan-messaging-<image>-*) is closed. A pin that
-is already in `main` does nothing.
+is already in oan-helm does nothing.
 
 Environment: GH_USER, GH_TOKEN (Jenkins credential oan-helm-fork-token: the account that owns the fork
 <GH_USER>/oan-helm); OAN_HELM_UPSTREAM (default Centre-for-Open-Societal-Systems/oan-helm).
@@ -145,7 +145,7 @@ def main(argv: list[str]) -> int:
         path = work / VALUES
         text = path.read_text(encoding="utf-8")
         if get_value(text, PATHS[key]) == value:
-            print(f"{key} is already pinned to {value} on main; nothing to do")
+            print(f"{key} is already pinned to {value} in oan-helm; nothing to do")
             return 0
         path.write_text(set_value(text, PATHS[key], value), encoding="utf-8", newline="")
         git(["checkout", "--quiet", "-b", branch], work, token)
