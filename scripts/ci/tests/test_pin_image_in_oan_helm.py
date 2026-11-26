@@ -112,8 +112,10 @@ class Promote(unittest.TestCase):
             return {"sha": "x"}, dev_text
 
         def api(method, url, token, body=None):
+            # the git data endpoint (.../git/commits/) does not accept a 12-character commit
+            self.assertNotIn("/git/commits/", url)
             sha = url.rsplit("/", 1)[1]
-            return {"tree": {"sha": trees[sha]}}
+            return {"commit": {"tree": {"sha": trees[sha]}}}
 
         def write(*args):
             written.append(args)
