@@ -21,6 +21,7 @@ jobs:
           node-version: '24'
           cache: npm
       - run: python3 scripts/ci/tests/test_image_names.py
+      - run: python3 scripts/ci/tests/test_pin_image_in_oan_helm.py
       - run: npm ci --no-audit --no-fund
       - run: bash ci/validate.sh
       - if: always()

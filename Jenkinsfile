@@ -2,6 +2,7 @@
 //   379220350808.dkr.ecr.ap-south-1.amazonaws.com/eoan/<repo name>/<service>:<version>
 // <version> = init.yaml's version plus -<branch>.<build> (for example 1.0.0-develop.7), the same style as the
 // other eoan/ images; a second tag carries the 12-character commit. Tags in the repository are immutable.
+// After the push, the pin stage opens the oan-helm pull request that moves the image tag (develop only).
 // Jenkins job: oan-messaging-ui (ci/jenkins/jobs/oan-messaging-ui.xml), builds the develop branch; develop publishes.
 // Needs the Jenkins credential aws-ecr-creds-new (AWS Credentials with ECR push access).
 pipeline {
@@ -42,6 +43,7 @@ pipeline {
             // (ci/README.md). JUnit results are published whatever the outcome.
             steps {
                 sh 'python3 scripts/ci/tests/test_image_names.py'
+                sh 'python3 scripts/ci/tests/test_pin_image_in_oan_helm.py'
                 sh 'bash ci/run-isolated.sh'
             }
             post { always { junit allowEmptyResults: false, testResults: 'reports/tests.xml' } }
@@ -67,6 +69,20 @@ pipeline {
                             | docker login --username AWS --password-stdin "$IMAGE_REGISTRY"
                         docker push "$IMAGE:$IMAGE_VERSION"
                         docker push "$IMAGE:$IMAGE_SHA"
+                    '''
+                }
+            }
+        }
+
+        // The image is pinned in oan-helm by a pull request from the pipeline account's fork; merging it starts the
+        // New Dev delivery (oan-helm-dev-commons, scripts/ci/deliver_dev_oan_messaging.sh). Nothing is pushed to oan-helm itself.
+        stage('Pin image in oan-helm') {
+            when { branch 'develop' }
+            steps {
+                withCredentials([usernamePassword(credentialsId: 'oan-helm-fork-token', usernameVariable: 'GH_USER', passwordVariable: 'GH_TOKEN')]) {
+                    sh '''
+                        digest=$(docker image inspect --format '{{index .RepoDigests 0}}' "$IMAGE:$IMAGE_VERSION" | sed 's/.*@//')
+                        python3 scripts/ci/pin_image_in_oan_helm.py ui "$IMAGE_VERSION" "$digest"
                     '''
                 }
             }
