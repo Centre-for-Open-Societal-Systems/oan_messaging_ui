@@ -72,3 +72,10 @@ Checks (what CI runs): `npm run lint`, `npm run typecheck`, `npm test`,
 
 See [docs/architecture.md](docs/architecture.md), [docs/deployment.md](docs/deployment.md)
 and [docs/ci.md](docs/ci.md).
+
+## From develop to staging
+
+A develop build publishes the image and pins it for New Dev in oan-helm. To release it to staging, open and merge the pull
+request "Promote oan_messaging_ui develop to staging". The staging build then pins the same image for staging in oan-helm
+(only when staging holds exactly the code that image was built from), and `oan-helm-staging-commons` delivers it. Nothing
+is built or pushed for staging.
