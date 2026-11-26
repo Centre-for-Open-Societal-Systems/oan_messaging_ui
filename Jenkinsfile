@@ -2,7 +2,7 @@
 //   379220350808.dkr.ecr.ap-south-1.amazonaws.com/eoan/<repo name>/<service>:<version>
 // <version> = init.yaml's version plus -<branch>.<build> (for example 1.0.0-develop.7), the same style as the
 // other eoan/ images; a second tag carries the 12-character commit. Tags in the repository are immutable.
-// After the push, the pin stage opens the oan-helm pull request that moves the image tag (develop only).
+// After the push, the pin stage commits the new image tag to oan-helm's values (develop only; automated pin only).
 // Jenkins job: oan-messaging-ui (ci/jenkins/jobs/oan-messaging-ui.xml), builds the develop branch; develop publishes.
 // Needs the Jenkins credential aws-ecr-creds-new (AWS Credentials with ECR push access).
 pipeline {
@@ -74,8 +74,9 @@ pipeline {
             }
         }
 
-        // The image is pinned in oan-helm by a pull request from the pipeline account's fork; merging it starts the
-        // New Dev delivery (oan-helm-dev-commons, scripts/ci/deliver_dev_oan_messaging.sh). Nothing is pushed to oan-helm itself.
+        // The image tag is pinned in oan-helm's values by one API commit with oan-helm-fork-token, like the other
+        // automation accounts of oan-helm; the commit starts the New Dev delivery (oan-helm-dev-commons,
+        // scripts/ci/deliver_dev_oan_messaging.sh).
         stage('Pin image in oan-helm') {
             when { branch 'develop' }
             steps {
