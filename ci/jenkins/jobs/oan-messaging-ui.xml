@@ -1,5 +1,5 @@
 <?xml version="1.1" encoding="UTF-8"?>
-<!-- Jenkins job oan-messaging-ui: multibranch pipeline on Centre-for-Open-Societal-Systems/oan_messaging_ui, develop branch only, runs Jenkinsfile. Create or update it with the Jenkins REST API (createItem / config.xml). -->
+<!-- Jenkins job oan-messaging-ui: multibranch pipeline on Centre-for-Open-Societal-Systems/oan_messaging_ui, every branch with a Jenkinsfile (develop publishes and pins; staging only builds, tests and pins New Dev's image for staging), scanned every 5 minutes, runs Jenkinsfile. Create or update it with the Jenkins REST API (createItem / config.xml). -->
 <org.jenkinsci.plugins.workflow.multibranch.WorkflowMultiBranchProject>
   <actions/>
   <description>Builds the OAN Messaging console image from Centre-for-Open-Societal-Systems/oan_messaging_ui develop and publishes it to ECR as eoan/oan_messaging_ui/oan-messaging-ui:&lt;version&gt; (Jenkinsfile). Defined in git: ci/jenkins/jobs/oan-messaging-ui.xml.</description>
@@ -12,8 +12,8 @@
   </orphanedItemStrategy>
   <triggers>
     <com.cloudbees.hudson.plugins.folder.computed.PeriodicFolderTrigger>
-      <spec>H H/4 * * *</spec>
-      <interval>86400000</interval>
+      <spec>H/5 * * * *</spec>
+      <interval>300000</interval>
     </com.cloudbees.hudson.plugins.folder.computed.PeriodicFolderTrigger>
   </triggers>
   <disabled>false</disabled>

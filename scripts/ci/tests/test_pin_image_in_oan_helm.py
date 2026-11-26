@@ -6,6 +6,7 @@ import threading
 import unittest
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import pin_image_in_oan_helm as pin  # noqa: E402
@@ -94,6 +95,61 @@ class Retry(unittest.TestCase):
         url, calls = self.serve([502])
         self.assertEqual(pin._send("GET", url, "t")[0], 502)
         self.assertEqual(len(calls), 4)
+
+
+class Promote(unittest.TestCase):
+    """The staging form: New Dev's image moves to staging only when staging holds the code it was built from."""
+
+    DEV = VALUES.replace(
+        "tag: 1.0.0-develop.1   # pinned", f"tag: 1.0.0-develop.5@{DIGEST}  # built from 0123456789ab"
+    )
+    HEAD = "f" * 40
+
+    def run_promote(self, dev_text, trees):
+        written = []
+
+        def read(repo, token, branch, file):
+            return {"sha": "x"}, dev_text
+
+        def api(method, url, token, body=None):
+            sha = url.rsplit("/", 1)[1]
+            return {"tree": {"sha": trees[sha]}}
+
+        def write(*args):
+            written.append(args)
+            return 0
+
+        with (
+            mock.patch.object(pin, "_read", read),
+            mock.patch.object(pin, "api", api),
+            mock.patch.object(pin, "_write", write),
+            mock.patch.dict(pin.os.environ, {"SOURCE_REPO": "org/repo"}),
+        ):
+            code = pin.promote("ui", self.HEAD, "t", "https://api.github.com/repos/o/h", "main")
+        return code, written
+
+    def test_same_tree_pins_the_image_on_staging_with_its_source(self):
+        code, written = self.run_promote(self.DEV, {"0123456789ab": "T1", self.HEAD: "T1"})
+        self.assertEqual(code, 0)
+        self.assertEqual(len(written), 1)
+        args = written[0]
+        self.assertEqual(args[3], pin.STAGING_VALUES)
+        self.assertEqual(args[5], f"1.0.0-develop.5@{DIGEST}")
+        self.assertEqual(args[6], "built from 0123456789ab")
+
+    def test_a_different_tree_pins_nothing(self):
+        code, written = self.run_promote(self.DEV, {"0123456789ab": "T1", self.HEAD: "T2"})
+        self.assertEqual((code, written), (0, []))
+
+    def test_a_pin_without_a_source_commit_pins_nothing(self):
+        dev = self.DEV.replace("  # built from 0123456789ab", "")
+        code, written = self.run_promote(dev, {})
+        self.assertEqual((code, written), (0, []))
+
+    def test_the_comment_replaces_the_old_one_only_when_given(self):
+        out = pin.set_value(VALUES, pin.PATHS["ui"], f"1.0.0-develop.2@{DIGEST}", "built from abcdefabcdef")
+        self.assertIn(f"tag: 1.0.0-develop.2@{DIGEST}  # built from abcdefabcdef\n", out)
+        self.assertEqual(pin.get_comment(out, pin.PATHS["ui"]), "built from abcdefabcdef")
 
 
 if __name__ == "__main__":
