@@ -1,4 +1,4 @@
-# ruff: noqa: E501, S310, S603  (stdlib-only CI script: https GitHub API and a fixed git command line)
+# ruff: noqa: E501, S310  (stdlib-only CI script: https GitHub API)
 """Move one image pin of the OAN Messaging release in oan-helm, by pull request.
 
     pin_image_in_oan_helm.py <service|ui> <tag> <sha256:digest>
@@ -14,7 +14,10 @@ is already in oan-helm does nothing.
 
 Environment: GH_USER, GH_TOKEN (Jenkins credential oan-helm-fork-token: the account that owns the fork
 <GH_USER>/oan-helm); OAN_HELM_UPSTREAM (default Centre-for-Open-Societal-Systems/oan-helm).
-The token is passed to git as a request header and never printed. Standard library only.
+Only the GitHub API is used (no git push): a personal access token may not push a tree that holds
+.github/workflows files, and a shallow clone makes every file look new. The branch is created in the fork at
+the upstream commit (a fork shares the upstream's objects) and the one values file is committed on it through
+the contents API, so the pull request is exactly that one line. The token is never printed. Standard library only.
 """
 
 from __future__ import annotations
@@ -23,11 +26,9 @@ import base64
 import json
 import os
 import re
-import subprocess
 import sys
-import tempfile
 import urllib.request
-from pathlib import Path
+import urllib.error
 
 VALUES = "environments/dev/values/oan-messaging.yaml"
 #: image key -> path of its tag in the values file
@@ -80,7 +81,7 @@ def get_value(text: str, path: tuple[str, ...]) -> str:
     return re.sub(r"^\s*[^:]+:\s*", "", lines[_find(lines, path)]).split(" #")[0].strip()
 
 
-def api(method: str, url: str, token: str, body: dict | None = None):
+def api(method: str, url: str, token: str, body: dict | None = None, ok404: bool = False):
     req = urllib.request.Request(
         url,
         method=method,
@@ -92,28 +93,15 @@ def api(method: str, url: str, token: str, body: dict | None = None):
             "User-Agent": "oan-image-pinner",
         },
     )
-    with urllib.request.urlopen(req, timeout=30) as r:  # noqa: S310 - https GitHub API
-        raw = r.read()
+    try:
+        with urllib.request.urlopen(req, timeout=30) as r:
+            raw = r.read()
+    except urllib.error.HTTPError as e:
+        if ok404 and e.code in (404, 422):
+            return None
+        detail = e.read().decode(errors="replace")[:300].replace(token, "***")
+        sys.exit(f"{method} {url.split('?')[0]} failed: HTTP {e.code} {detail}")
     return json.loads(raw) if raw else None
-
-
-def git(args: list[str], cwd: Path, token: str) -> str:
-    basic = base64.b64encode(f"x-access-token:{token}".encode()).decode()
-    cmd = [
-        "git",
-        "-c",
-        f"http.extraheader=AUTHORIZATION: basic {basic}",
-        "-c",
-        f"user.name={AUTHOR[0]}",
-        "-c",
-        f"user.email={AUTHOR[1]}",
-        *args,
-    ]
-    done = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, check=False)
-    if done.returncode:
-        # The command line holds the token header; report only the git subcommand and its stderr.
-        sys.exit(f"git {args[0]} failed: {done.stderr.strip().replace(token, '***')[:300]}")
-    return done.stdout
 
 
 def main(argv: list[str]) -> int:
@@ -125,65 +113,49 @@ def main(argv: list[str]) -> int:
         sys.exit(f"refusing to pin {value!r}: expected N.N.N-develop.N@sha256:<64 hex>")
     user, token = os.environ["GH_USER"], os.environ["GH_TOKEN"]
     upstream = os.environ.get("OAN_HELM_UPSTREAM", "Centre-for-Open-Societal-Systems/oan-helm")
+    fork = f"{user}/{upstream.split('/')[1]}"
+    gh = "https://api.github.com/repos"
     branch = f"bot/oan-messaging-{key}-{tag}"
-    with tempfile.TemporaryDirectory() as tmp:
-        work = Path(tmp) / "oan-helm"
-        git(
-            [
-                "clone",
-                "--quiet",
-                "--depth",
-                "1",
-                "--branch",
-                "main",
-                f"https://github.com/{upstream}.git",
-                str(work),
-            ],
-            Path(tmp),
-            token,
-        )
-        path = work / VALUES
-        text = path.read_text(encoding="utf-8")
-        if get_value(text, PATHS[key]) == value:
-            print(f"{key} is already pinned to {value} in oan-helm; nothing to do")
-            return 0
-        path.write_text(set_value(text, PATHS[key], value), encoding="utf-8", newline="")
-        git(["checkout", "--quiet", "-b", branch], work, token)
-        git(
-            ["commit", "--quiet", "-am", f"Pin the OAN Messaging {key} image to {tag} for New Dev"],
-            work,
-            token,
-        )
-        git(
-            ["push", "--quiet", "--force", f"https://github.com/{user}/oan-helm.git", branch],
-            work,
-            token,
-        )
+
+    base = api("GET", f"{gh}/{upstream}/branches/main", token)["commit"]["sha"]
+    current = api("GET", f"{gh}/{upstream}/contents/{VALUES}?ref={base}", token)
+    text = base64.b64decode(current["content"]).decode("utf-8")
+    if get_value(text, PATHS[key]) == value:
+        print(f"{key} is already pinned to {value} in oan-helm; nothing to do")
+        return 0
+    new_text = set_value(text, PATHS[key], value)
+
+    # The branch in the fork starts at the upstream commit; an old branch of the same name is moved onto it.
+    ref = f"{gh}/{fork}/git/refs"
+    if api("POST", ref, token, {"ref": f"refs/heads/{branch}", "sha": base}, ok404=True) is None:
+        api("PATCH", f"{ref}/heads/{branch}", token, {"sha": base, "force": True})
+    api(
+        "PUT",
+        f"{gh}/{fork}/contents/{VALUES}",
+        token,
+        {
+            "message": f"Pin the OAN Messaging {key} image to {tag} for New Dev",
+            "content": base64.b64encode(new_text.encode("utf-8")).decode(),
+            "sha": current["sha"],
+            "branch": branch,
+            "author": {"name": AUTHOR[0], "email": AUTHOR[1]},
+            "committer": {"name": AUTHOR[0], "email": AUTHOR[1]},
+        },
+    )
+
     # Close an older pin PR of this image, then open the new one.
-    for pr in (
-        api("GET", f"https://api.github.com/repos/{upstream}/pulls?state=open&per_page=100", token)
-        or []
-    ):
-        ref = pr["head"]["ref"]
-        if (
-            ref.startswith(f"bot/oan-messaging-{key}-")
-            and ref != branch
-            and pr["head"]["user"]["login"] == user
-        ):
+    for pr in api("GET", f"{gh}/{upstream}/pulls?state=open&per_page=100", token) or []:
+        old = pr["head"]["ref"]
+        if old.startswith(f"bot/oan-messaging-{key}-") and old != branch and pr["head"]["user"]["login"] == user:
             api("POST", pr["comments_url"], token, {"body": f"Superseded by the pin to {tag}."})
             api("PATCH", pr["url"], token, {"state": "closed"})
             print(f"closed superseded pin PR #{pr['number']}")
-    existing = api(
-        "GET",
-        f"https://api.github.com/repos/{upstream}/pulls?state=open&head={user}:{branch}",
-        token,
-    )
-    if existing:
-        print(f"pull request already open: {existing[0]['html_url']}")
+    if api("GET", f"{gh}/{upstream}/pulls?state=open&head={user}:{branch}", token):
+        print("pull request already open for this pin")
         return 0
     pr = api(
         "POST",
-        f"https://api.github.com/repos/{upstream}/pulls",
+        f"{gh}/{upstream}/pulls",
         token,
         {
             "title": f"Pin the OAN Messaging {key} image to {tag} for New Dev",
@@ -191,7 +163,7 @@ def main(argv: list[str]) -> int:
             "base": "main",
             "maintainer_can_modify": True,
             "body": (
-                f"Opened by the Jenkins job of the {key} repository after its develop build pushed the image.\n\n"
+                f"Opened by the Jenkins job of the {key} repository after its develop build pushed the image.{chr(10)}{chr(10)}"
                 f"Changes only the `tag:` line of the {key} image in `{VALUES}` to `{value}`. "
                 "Merging starts `oan-helm-dev-commons`, which delivers the release to New Dev "
                 "(`scripts/ci/deliver_dev_oan_messaging.sh`)."
