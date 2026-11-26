@@ -2,7 +2,7 @@
 //   379220350808.dkr.ecr.ap-south-1.amazonaws.com/eoan/<repo name>/<service>:<version>
 // <version> = init.yaml's version plus -<branch>.<build> (for example 1.0.0-develop.7), the same style as the
 // other eoan/ images; a second tag carries the 12-character commit. Tags in the repository are immutable.
-// After the push, the pin stage commits the new image tag to oan-helm's values (develop only; automated pin only).
+// After the push, the pin stage commits the new image tag to oan-helm's values (develop only; automated pin only), and on the staging branch, the pin of New Dev's image into the staging values.
 // Jenkins job: oan-messaging-ui (ci/jenkins/jobs/oan-messaging-ui.xml), builds the develop branch; develop publishes.
 // Needs the Jenkins credential aws-ecr-creds-new (AWS Credentials with ECR push access).
 pipeline {
@@ -83,7 +83,22 @@ pipeline {
                 withCredentials([usernamePassword(credentialsId: 'oan-helm-fork-token', usernameVariable: 'GH_USER', passwordVariable: 'GH_TOKEN')]) {
                     sh '''
                         digest=$(docker image inspect --format '{{index .RepoDigests 0}}' "$IMAGE:$IMAGE_VERSION" | sed 's/.*@//')
-                        python3 scripts/ci/pin_image_in_oan_helm.py ui "$IMAGE_VERSION" "$digest"
+                        python3 scripts/ci/pin_image_in_oan_helm.py ui "$IMAGE_VERSION" "$digest" "$IMAGE_SHA"
+                    '''
+                }
+            }
+        }
+
+        // Staging runs the images New Dev already runs and never builds or pushes its own. After a build of the staging
+        // branch passed, this copies New Dev's image into oan-helm's staging values (one API commit, as the New Dev pin)
+        // when staging holds exactly the code that image was built from; the commit starts oan-helm-staging-commons.
+        stage('Pin New Dev image for staging in oan-helm') {
+            when { branch 'staging' }
+            steps {
+                withCredentials([usernamePassword(credentialsId: 'oan-helm-fork-token', usernameVariable: 'GH_USER', passwordVariable: 'GH_TOKEN')]) {
+                    sh '''
+                        SOURCE_REPO=Centre-for-Open-Societal-Systems/oan_messaging_ui \
+                            python3 scripts/ci/pin_image_in_oan_helm.py staging ui "$(git rev-parse HEAD)"
                     '''
                 }
             }
