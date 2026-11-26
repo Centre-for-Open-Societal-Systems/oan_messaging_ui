@@ -27,8 +27,8 @@ import json
 import os
 import re
 import sys
-import urllib.request
 import urllib.error
+import urllib.request
 
 VALUES = "environments/dev/values/oan-messaging.yaml"
 #: image key -> path of its tag in the values file
@@ -146,7 +146,11 @@ def main(argv: list[str]) -> int:
     # Close an older pin PR of this image, then open the new one.
     for pr in api("GET", f"{gh}/{upstream}/pulls?state=open&per_page=100", token) or []:
         old = pr["head"]["ref"]
-        if old.startswith(f"bot/oan-messaging-{key}-") and old != branch and pr["head"]["user"]["login"] == user:
+        if (
+            old.startswith(f"bot/oan-messaging-{key}-")
+            and old != branch
+            and pr["head"]["user"]["login"] == user
+        ):
             api("POST", pr["comments_url"], token, {"body": f"Superseded by the pin to {tag}."})
             api("PATCH", pr["url"], token, {"state": "closed"})
             print(f"closed superseded pin PR #{pr['number']}")
