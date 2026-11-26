@@ -150,7 +150,9 @@ def main(argv: list[str]) -> int:
             token,
             {
                 "message": f"Pin the OAN Messaging {key} image to {tag} for New Dev",
-                "content": base64.b64encode(set_value(text, PATHS[key], value).encode("utf-8")).decode(),
+                "content": base64.b64encode(
+                    set_value(text, PATHS[key], value).encode("utf-8")
+                ).decode(),
                 "sha": current["sha"],
                 "branch": branch,
                 "author": {"name": AUTHOR[0], "email": AUTHOR[1]},
