@@ -1,0 +1,51 @@
+<?xml version="1.1" encoding="UTF-8"?>
+<!-- Jenkins job oan-messaging-ui: multibranch pipeline on Centre-for-Open-Societal-Systems/oan_messaging_ui, develop branch only, runs Jenkinsfile. Create or update it with the Jenkins REST API (createItem / config.xml). -->
+<org.jenkinsci.plugins.workflow.multibranch.WorkflowMultiBranchProject>
+  <actions/>
+  <description>Builds the OAN Messaging console image from Centre-for-Open-Societal-Systems/oan_messaging_ui develop and publishes it to ECR as eoan/oan_messaging_ui/oan-messaging-ui:&lt;version&gt; (Jenkinsfile). Defined in git: ci/jenkins/jobs/oan-messaging-ui.xml.</description>
+  <properties/>
+  <orphanedItemStrategy class="com.cloudbees.hudson.plugins.folder.computed.DefaultOrphanedItemStrategy">
+    <pruneDeadBranches>true</pruneDeadBranches>
+    <daysToKeep>-1</daysToKeep>
+    <numToKeep>-1</numToKeep>
+    <abortBuilds>false</abortBuilds>
+  </orphanedItemStrategy>
+  <triggers>
+    <com.cloudbees.hudson.plugins.folder.computed.PeriodicFolderTrigger>
+      <spec>H H/4 * * *</spec>
+      <interval>86400000</interval>
+    </com.cloudbees.hudson.plugins.folder.computed.PeriodicFolderTrigger>
+  </triggers>
+  <disabled>false</disabled>
+  <sources class="jenkins.branch.MultiBranchProject$BranchSourceList">
+    <data>
+      <jenkins.branch.BranchSource>
+        <source class="org.jenkinsci.plugins.github_branch_source.GitHubSCMSource">
+          <id>oan-messaging-ui</id>
+          <apiUri>https://api.github.com</apiUri>
+          <credentialsId>oan-ci-app</credentialsId>
+          <repoOwner>Centre-for-Open-Societal-Systems</repoOwner>
+          <repository>oan_messaging_ui</repository>
+          <traits>
+            <!-- Branches only (no pull requests, no forks): pull requests never deliver. -->
+            <org.jenkinsci.plugins.github__branch__source.BranchDiscoveryTrait>
+              <strategyId>3</strategyId>
+            </org.jenkinsci.plugins.github__branch__source.BranchDiscoveryTrait>
+            <jenkins.scm.impl.trait.WildcardSCMHeadFilterTrait>
+              <includes>develop</includes>
+              <excludes></excludes>
+            </jenkins.scm.impl.trait.WildcardSCMHeadFilterTrait>
+          </traits>
+        </source>
+        <strategy class="jenkins.branch.DefaultBranchPropertyStrategy">
+          <properties class="empty-list"/>
+        </strategy>
+      </jenkins.branch.BranchSource>
+    </data>
+    <owner class="org.jenkinsci.plugins.workflow.multibranch.WorkflowMultiBranchProject" reference="../.."/>
+  </sources>
+  <factory class="org.jenkinsci.plugins.workflow.multibranch.WorkflowBranchProjectFactory">
+    <owner class="org.jenkinsci.plugins.workflow.multibranch.WorkflowMultiBranchProject" reference="../.."/>
+    <scriptPath>Jenkinsfile</scriptPath>
+  </factory>
+</org.jenkinsci.plugins.workflow.multibranch.WorkflowMultiBranchProject>

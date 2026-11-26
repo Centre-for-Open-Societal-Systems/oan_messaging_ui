@@ -1,0 +1,26 @@
+{
+  "application_mnemonic": "__APPLICATION_MNEMONIC__",
+  "application_url": "__APPLICATION_URL__",
+  "application_description": "__APPLICATION_DESCRIPTION__",
+  "icon_base64": "PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCA0MCA0MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KICA8cmVjdCB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHJ4PSI4IiBmaWxsPSIjRTdGM0VFIi8+CiAgPHJlY3QgeD0iOCIgeT0iMTIiIHdpZHRoPSIyNCIgaGVpZ2h0PSIxNyIgcng9IjMiIGZpbGw9IiMxMjkzNkQiLz4KICA8cGF0aCBkPSJNOS41IDE0bDEwLjUgOCAxMC41LTgiIHN0cm9rZT0iI0U3RjNFRSIgc3Ryb2tlLXdpZHRoPSIxLjgiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCIvPgogIDxwYXRoIGQ9Ik0xNCAyOWwtMyA1di01eiIgZmlsbD0iIzBFN0E1QSIvPgo8L3N2Zz4K",
+  "width": 80,
+  "order": 5,
+  "active": true,
+  "permissions": [
+    {
+      "permission_mnemonic": "messages:view",
+      "permission_description": "View messages and their callbacks (no message text)",
+      "active": true
+    }
+  ],
+  "roles": [
+    {
+      "role_mnemonic": "Messaging Viewer",
+      "role_description": "Can open the OAN Messaging console. Grants no access to message text.",
+      "active": true,
+      "permissions": [
+        "messages:view"
+      ]
+    }
+  ]
+}
