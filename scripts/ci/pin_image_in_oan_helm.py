@@ -199,10 +199,10 @@ def promote(key: str, head: str, token: str, repo: str, branch: str) -> int:
     if not TAG.fullmatch(value) or not SOURCE.fullmatch(built_from):
         print(f"New Dev's {key} pin ({value}) names no source commit; nothing to promote")
         return 0
-    source = f"https://api.github.com/repos/{source_repo}/git/commits"
+    source = f"https://api.github.com/repos/{source_repo}/commits"  # takes short commits too
     built = api("GET", f"{source}/{built_from}", token)
     staged = api("GET", f"{source}/{head}", token)
-    if built["tree"]["sha"] != staged["tree"]["sha"]:
+    if built["commit"]["tree"]["sha"] != staged["commit"]["tree"]["sha"]:
         print(
             f"New Dev runs the {key} image built from {built_from}, whose code differs from the staging "
             f"commit {head[:12]}; nothing pinned (promote develop to staging, then build develop again)"
